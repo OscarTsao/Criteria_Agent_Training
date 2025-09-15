@@ -161,12 +161,18 @@ def simple_train_test_split(df, test_size=0.2, val_size=0.1, random_state=42):
     return train_df, val_df, test_df
 
 def calculate_metrics(y_true, y_pred):
-    """Calculate basic metrics without scikit-learn"""
+    """Calculate comprehensive metrics including confusion matrix"""
     y_true = np.array(y_true)
     y_pred = np.array(y_pred)
 
     # Accuracy
     accuracy = (y_true == y_pred).mean()
+
+    # Confusion Matrix (2x2 for binary classification)
+    confusion_matrix = np.zeros((2, 2), dtype=int)
+    for true_label in [0, 1]:
+        for pred_label in [0, 1]:
+            confusion_matrix[true_label, pred_label] = ((y_true == true_label) & (y_pred == pred_label)).sum()
 
     # Precision, Recall, F1 for each class
     metrics = {}
@@ -181,12 +187,27 @@ def calculate_metrics(y_true, y_pred):
 
         metrics[f'class_{class_id}'] = {'precision': precision, 'recall': recall, 'f1': f1}
 
-    # Weighted F1
+    # Overall metrics
+    overall_precision = sum(metrics[f'class_{i}']['precision'] for i in [0, 1]) / 2
+    overall_recall = sum(metrics[f'class_{i}']['recall'] for i in [0, 1]) / 2
+
+    # Weighted metrics
     class_counts = [(y_true == i).sum() for i in [0, 1]]
     total_count = sum(class_counts)
+    weighted_precision = sum(metrics[f'class_{i}']['precision'] * class_counts[i] for i in [0, 1]) / total_count
+    weighted_recall = sum(metrics[f'class_{i}']['recall'] * class_counts[i] for i in [0, 1]) / total_count
     weighted_f1 = sum(metrics[f'class_{i}']['f1'] * class_counts[i] for i in [0, 1]) / total_count
 
-    return accuracy, weighted_f1, metrics
+    return {
+        'accuracy': accuracy,
+        'confusion_matrix': confusion_matrix,
+        'precision': overall_precision,
+        'recall': overall_recall,
+        'weighted_precision': weighted_precision,
+        'weighted_recall': weighted_recall,
+        'weighted_f1': weighted_f1,
+        'per_class_metrics': metrics
+    }
 
 class BasicTrainer:
     """Training pipeline using basic neural network"""
@@ -381,22 +402,37 @@ class BasicTrainer:
                 all_labels.extend(labels.cpu().numpy())
 
         # Calculate metrics
-        accuracy, f1, detailed_metrics = calculate_metrics(all_labels, all_predictions)
+        metrics_result = calculate_metrics(all_labels, all_predictions)
 
         print(f"\nEvaluation Results:")
-        print(f"Accuracy: {accuracy:.4f}")
-        print(f"Weighted F1 Score: {f1:.4f}")
+        print(f"Accuracy: {metrics_result['accuracy']:.4f}")
+        print(f"Precision: {metrics_result['precision']:.4f}")
+        print(f"Recall: {metrics_result['recall']:.4f}")
+        print(f"Weighted Precision: {metrics_result['weighted_precision']:.4f}")
+        print(f"Weighted Recall: {metrics_result['weighted_recall']:.4f}")
+        print(f"Weighted F1 Score: {metrics_result['weighted_f1']:.4f}")
+
+        print(f"\nConfusion Matrix:")
+        print(f"              Predicted")
+        print(f"              0    1")
+        print(f"Actual 0   {metrics_result['confusion_matrix'][0, 0]:4d} {metrics_result['confusion_matrix'][0, 1]:4d}")
+        print(f"Actual 1   {metrics_result['confusion_matrix'][1, 0]:4d} {metrics_result['confusion_matrix'][1, 1]:4d}")
 
         print("\nPer-class metrics:")
-        for class_name, metrics in detailed_metrics.items():
+        for class_name, metrics in metrics_result['per_class_metrics'].items():
             print(f"{class_name}: Precision: {metrics['precision']:.4f}, Recall: {metrics['recall']:.4f}, F1: {metrics['f1']:.4f}")
 
         return {
-            'accuracy': accuracy,
-            'f1_score': f1,
+            'accuracy': metrics_result['accuracy'],
+            'precision': metrics_result['precision'],
+            'recall': metrics_result['recall'],
+            'weighted_precision': metrics_result['weighted_precision'],
+            'weighted_recall': metrics_result['weighted_recall'],
+            'f1_score': metrics_result['weighted_f1'],
+            'confusion_matrix': metrics_result['confusion_matrix'],
             'predictions': all_predictions,
             'labels': all_labels,
-            'detailed_metrics': detailed_metrics
+            'per_class_metrics': metrics_result['per_class_metrics']
         }
 
 def main():
